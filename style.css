@@ -62,7 +62,6 @@ svg.plot { display: block; width: 100%; height: auto; overflow: visible; touch-a
 .plot .axis { stroke: var(--line-strong); stroke-width: 1; }
 .plot .tick { stroke: var(--line-strong); stroke-width: 1; }
 .plot text { fill: var(--ink-muted); font-size: 11px; font-family: var(--font-body); font-variant-numeric: tabular-nums; }
-.plot .xl { text-anchor: start; }
 .plot .ln { fill: none; stroke: var(--ink); stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round; }
 .plot .pt { fill: var(--ink); }
 .plot .bar { fill: var(--c-steps); stroke: var(--bar-line); stroke-width: 1; }

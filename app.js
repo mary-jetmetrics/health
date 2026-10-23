@@ -173,9 +173,14 @@ function plot(c, slots) {
   sc.ticks.forEach((v, i) => {
     out += `<line class="grid" x1="${pl}" x2="${W - pr}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="yl" x="${pl - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${num(v, sc.dec)}${c.from != null ? '%' : ''}</text>`;
   });
-  // подписи времени
-  // у правого края подпись уходит влево от отметки, чтобы не вылезать за блок
-  for (const tk of xTicks(slots, gw)) out += `<text class="xl" x="${(pl + gw * tk.i).toFixed(1)}" y="${H - 6}"${W - pr - (pl + gw * tk.i) < 30 ? ' text-anchor="end"' : ''}>${tk.label}</text><line class="tick" x1="${(pl + gw * tk.i).toFixed(1)}" x2="${(pl + gw * tk.i).toFixed(1)}" y1="${pt + ph}" y2="${pt + ph + 4}"/>`;
+  // подписи времени: в месяцах и крупнее слот — сам период, подпись по центру, под точкой (Мария, 24.10.26);
+  // в днях и неделях — у начала месяца. У краёв подпись прижимается внутрь, чтобы не вылезать за блок
+  const mid = COARSE();
+  for (const tk of xTicks(slots, gw)) {
+    const x = pl + gw * (tk.i + (mid ? 0.5 : 0));
+    const anchor = W - pr - x < (mid ? 14 : 30) ? 'end' : mid && x - pl < 14 ? 'start' : mid ? 'middle' : 'start';
+    out += `<text class="xl" x="${x.toFixed(1)}" y="${H - 6}" text-anchor="${anchor}">${tk.label}</text><line class="tick" x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${pt + ph}" y2="${pt + ph + 4}"/>`;
+  }
   // разрыв линии, если замеров не было дольше: неделя для дней, две недели для недель, иначе любой пропуск;
   // у жира и состава — ещё и на смене весов: два прибора одной линией не соединяем
   const maxGap = UI.g === 'day' ? 7 : UI.g === 'week' ? 2 : 1;
