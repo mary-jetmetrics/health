@@ -211,6 +211,23 @@ function plot(c, slots) {
       if (dots || run.length === 1) out += run.map(i => `<circle class="pt" cx="${cx(i).toFixed(1)}" cy="${y(slots[i].v[c.key]).toFixed(1)}" r="${dots ? 2.5 : 1.8}"/>`).join('');
     }
   }
+  // подписи значений, светлые (Мария, 24.10.26): у каждой точки, если помещаются; тесно — через одну-две, последняя всегда.
+  // У краёв подпись прижимается внутрь, у верха графика — уходит под точку
+  const idx = slots.map((s, i) => s.v[c.key] != null ? i : -1).filter(i => i >= 0);
+  if (idx.length) {
+    const lbl = v => num(v, c.d), wpx = Math.max(...idx.map(i => lbl(slots[i].v[c.key]).length)) * 5.8 + 6;
+    const k = Math.max(1, Math.ceil(wpx / gw));
+    let prev = Infinity;
+    for (let q = idx.length - 1; q >= 0; q--) {
+      const i = idx[q];
+      if (prev - i < k) continue;
+      prev = i;
+      const v = slots[i].v[c.key], x = cx(i), yy = y(v);
+      const ty = c.kind === 'bars' ? Math.max(pt + 2, yy - 4) : (yy - 8 < pt + 6 ? yy + 15 : yy - 8);
+      const anchor = x + wpx / 2 > W - pr + 4 ? 'end' : x - wpx / 2 < pl - 4 ? 'start' : 'middle';
+      out += `<text class="dv" x="${x.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="${anchor}">${lbl(v)}</text>`;
+    }
+  }
   // смена весов: Zepp Life → PICOOC
   if (c.scales && PICOOC && PICOOC >= slots[0].t && PICOOC <= LAST) {
     const i = slots.findIndex(s => PICOOC >= s.t && PICOOC < s.e), x = pl + gw * i;

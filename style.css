@@ -69,6 +69,7 @@ svg.plot { display: block; width: 100%; height: auto; overflow: visible; touch-a
 .plot .goal { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 5 4; }
 .plot .mark { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 3 3; }
 .plot .mk { font-size: 10.5px; }
+.plot .dv { font-size: 10px; fill: var(--ink-muted); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
 .plot .xh { stroke: var(--ink-muted); stroke-width: 1; }
 .plot .hd { fill: var(--ink); stroke: var(--bg); stroke-width: 2; }
 
