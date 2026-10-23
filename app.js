@@ -82,11 +82,10 @@ const saved = (() => { try { return JSON.parse(LS.get('hl-ui') || '{}'); } catch
 const UI = {
   g: GS.some(x => x[0] === saved.g) ? saved.g : 'month',
   r: RS.some(x => x[0] === saved.r) ? saved.r : null,
-  comp: saved.comp === 'pct' ? 'pct' : 'kg',
   hover: null,
 };
 if (!UI.r) UI.r = R_DEF[UI.g];
-const keepUI = () => LS.set('hl-ui', JSON.stringify({ g: UI.g, r: UI.r, comp: UI.comp }));
+const keepUI = () => LS.set('hl-ui', JSON.stringify({ g: UI.g, r: UI.r }));
 const COARSE = () => ['month', 'quarter', 'half', 'year'].includes(UI.g);   // цвет «лучше / хуже» — только от месяца: день к дню у весов — вода
 
 /* ---------- периоды и средние ---------- */
@@ -103,15 +102,12 @@ function buildSlots() {
   const slots = [];
   let k = 0;
   for (let t = rangeStart(UI.g, UI.r); t <= LAST; t = pNext(UI.g, t)) {
-    const e = pNext(UI.g, t), acc = { w: [], f: [], fk: [], lk: [], fp: [], lp: [], s: [] }, last = {};
+    const e = pNext(UI.g, t), acc = { w: [], f: [], fk: [], s: [] }, last = {};
     while (k < DAYS.length && DAYS[k].t < t) k++;
     for (; k < DAYS.length && DAYS[k].t < e; k++) {
       const x = DAYS[k];
       for (const key of ['w', 'f', 's']) if (x[key] != null) { acc[key].push(x[key]); last[key] = x.t; }
-      if (x.fk != null && x.lk != null) {
-        const sum = x.fk + x.lk;
-        acc.fk.push(x.fk); acc.lk.push(x.lk); acc.fp.push(x.fk / sum * 100); acc.lp.push(x.lk / sum * 100); last.c = x.t;
-      }
+      if (x.fk != null) { acc.fk.push(x.fk); last.c = x.t; }
     }
     const v = {};
     for (const key in acc) v[key] = avg(acc[key]);
@@ -122,19 +118,16 @@ function buildSlots() {
 
 /* ---------- графики ---------- */
 const TIP_W = 'Среднее по дням с замером; если взвешивалась несколько раз за день — среднее за день. Вес — с весов и ручных записей в «Здоровье».';
-const TIP_F = 'Весы считают жир через воду в теле, поэтому день ото дня он прыгает: внутри месяца разброс до ±2,7 п. п. Сравнивай месяцами, а не днями. Пунктир — смена весов: до февраля 2025 Zepp Life, после — PICOOC; приборы считают по-разному, скачок на стыке может быть от весов, а не от тела.';
-const TIP_C = 'Жир и сухая масса с тех же весов в тот же день, вместе — вес на весах. Сухая масса — всё, кроме жира: мышцы, вода, органы, кости; отдельно мышцы весы в «Здоровье» не передают. В «%» слои приведены к 100%.';
+const TIP_F = 'Линия — жир в %, шкала слева. Столбцы — жир в кг (вес на весах × % жира), шкала справа. Пунктир по горизонтали — цель 30%. Весы считают жир через воду в теле, поэтому день ото дня он прыгает: внутри месяца разброс до ±2,7 п. п. Сравнивай месяцами, а не днями. Пунктир по вертикали — смена весов: до февраля 2025 Zepp Life, после — PICOOC; приборы считают по-разному, скачок на стыке может быть от весов, а не от тела.';
 const TIP_S = 'Шаги с айфона и часов без двойного счёта: за каждый час берётся тот, кто насчитал больше. Среднее за день по дням с данными; день выгрузки не берётся — он неполный.';
 // sign: −1 — меньше значит лучше, +1 — больше лучше, 0 — без оценки
 const CHARTS = [
   { id: 'w', title: 'Вес', tip: TIP_W, kind: 'line', key: 'w', nkey: 'w', unit: 'кг', d: 1, du: 'кг', sign: 0, h: 168 },
-  { id: 'f', title: 'Жир', tip: TIP_F, kind: 'line', key: 'f', nkey: 'f', unit: '%', d: 1, du: 'п. п.', sign: -1, h: 168, scales: true },
-  { id: 'c', title: 'Состав тела', tip: TIP_C, kind: 'stack', nkey: 'c', h: 168, scales: true },
+  // жир: линия в % (шкала слева от 25%) и столбцы в кг (шкала справа), пунктир — цель 30% (Мария, 23.10.26)
+  { id: 'f', title: 'Жир', tip: TIP_F, kind: 'combo', key: 'f', nkey: 'f', unit: '%', d: 1, du: 'п. п.', sign: -1, h: 184, scales: true, from: 25, goal: 30,
+    bars: { key: 'fk', nkey: 'c', unit: 'кг жира', d: 1, du: 'кг', sign: -1 } },
   { id: 's', title: 'Шаги', tip: TIP_S, kind: 'bars', key: 's', nkey: 's', unit: 'в день', d: 0, du: '', sign: 1, h: 150 },
 ];
-const LAYERS = () => UI.comp === 'pct'
-  ? [{ key: 'lp', name: 'сухая масса', cls: 'l-lean', unit: '%', d: 1, du: 'п. п.', sign: 0 }, { key: 'fp', name: 'жир', cls: 'l-fat', unit: '%', d: 1, du: 'п. п.', sign: -1 }]
-  : [{ key: 'lk', name: 'сухая масса', cls: 'l-lean', unit: 'кг', d: 1, du: 'кг', sign: 0 }, { key: 'fk', name: 'жир', cls: 'l-fat', unit: 'кг', d: 1, du: 'кг', sign: -1 }];
 
 function niceScale(min, max, count, fromZero) {
   if (fromZero) min = 0;
@@ -167,18 +160,30 @@ function plot(c, slots) {
   const W = GEO.W, H = c.h, { pl, pr, pt, pb } = GEO, ph = H - pt - pb, n = slots.length, gw = GEO.gw;
   const cx = i => pl + gw * (i + 0.5);
   let out = '', sc;
-  if (c.kind === 'stack') {
-    const L = LAYERS();
-    const tops = slots.map(s => s.v[L[0].key] != null ? s.v[L[0].key] + s.v[L[1].key] : null).filter(v => v != null);
-    sc = UI.comp === 'pct' ? { lo: 0, hi: 100, ticks: [0, 50, 100], dec: 0 } : niceScale(0, tops.length ? Math.max(...tops) : 1, 3, true);
+  const vals = slots.map(s => s.v[c.key]).filter(v => v != null);
+  if (c.from != null) {
+    // шкала от заданного начала (жир — от 25%): шаг подбирается, чтобы делений было не больше четырёх и цель попадала внутрь
+    const top = Math.max(c.goal || c.from, ...vals), step = [1, 2, 2.5, 5, 10].find(k => (top - c.from) / k <= 4) || 10;
+    const n = Math.max(1, Math.ceil((top - c.from) / step - 1e-9));
+    sc = { lo: c.from, hi: c.from + n * step, ticks: Array.from({ length: n + 1 }, (_, i) => c.from + i * step), dec: step < 1 ? 1 : 0 };
   } else {
-    const vals = slots.map(s => s.v[c.key]).filter(v => v != null);
     sc = vals.length ? niceScale(Math.min(...vals), Math.max(...vals), 4, c.kind === 'bars') : { lo: 0, hi: 1, ticks: [], dec: 0 };
   }
   const y = v => pt + ph - (v - sc.lo) / (sc.hi - sc.lo) * ph;
   GEO.y[c.id] = y;
+  // вторая шкала справа (кг) — с нуля и с тем же числом делений, чтобы подписи легли на те же линии сетки
+  let y2 = null, sc2 = null;
+  if (c.bars) {
+    const n = sc.ticks.length - 1, kv = slots.map(s => s.v[c.bars.key]).filter(v => v != null);
+    const step = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30].find(k => k * n >= (kv.length ? Math.max(...kv) : 1)) || 50;
+    sc2 = { hi: step * n, ticks: Array.from({ length: n + 1 }, (_, i) => i * step) };
+    y2 = v => pt + ph - v / sc2.hi * ph;
+  }
   // сетка и подписи значений
-  for (const v of sc.ticks) out += `<line class="grid" x1="${pl}" x2="${W - pr}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="yl" x="${pl - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${num(v, sc.dec)}${c.kind === 'stack' && UI.comp === 'pct' ? '%' : ''}</text>`;
+  sc.ticks.forEach((v, i) => {
+    out += `<line class="grid" x1="${pl}" x2="${W - pr}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="yl" x="${pl - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${num(v, sc.dec)}${c.from != null ? '%' : ''}</text>`;
+    if (sc2) out += `<text class="yl" x="${W - pr + 6}" y="${(y(v) + 4).toFixed(1)}">${num(sc2.ticks[i])}${i === sc.ticks.length - 1 ? ' кг' : ''}</text>`;
+  });
   // подписи времени
   // у правого края подпись уходит влево от отметки, чтобы не вылезать за блок
   for (const tk of xTicks(slots, gw)) out += `<text class="xl" x="${(pl + gw * tk.i).toFixed(1)}" y="${H - 6}"${W - pr - (pl + gw * tk.i) < 30 ? ' text-anchor="end"' : ''}>${tk.label}</text><line class="tick" x1="${(pl + gw * tk.i).toFixed(1)}" x2="${(pl + gw * tk.i).toFixed(1)}" y1="${pt + ph}" y2="${pt + ph + 4}"/>`;
@@ -192,30 +197,25 @@ function plot(c, slots) {
     if (cur.length) r.push(cur);
     return r;
   };
-  if (c.kind === 'line') {
+  const bars = (key, yy, cls) => {
+    const bw = Math.max(1, Math.min(28, gw * (gw > 6 ? 0.62 : 0.8))), rx = bw >= 6 ? 2 : 0;
+    slots.forEach((s, i) => {
+      const v = s.v[key]; if (v == null) return;
+      const top = yy(v), hgt = Math.max(1, pt + ph - top);
+      out += `<rect class="${cls}" x="${(cx(i) - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" rx="${rx}"/>`;
+    });
+  };
+  if (c.kind === 'bars') bars(c.key, y, 'bar');
+  if (c.bars) bars(c.bars.key, y2, 'bar fat');   // столбцы под линией
+  if (c.goal) {
+    const gy = y(c.goal).toFixed(1);
+    out += `<line class="goal" x1="${pl}" x2="${W - pr}" y1="${gy}" y2="${gy}"/><text class="mk" x="${pl + 6}" y="${(+gy - 5).toFixed(1)}">цель ${c.goal}%</text>`;
+  }
+  if (c.kind === 'line' || c.kind === 'combo') {
     const dots = n <= 70;
     for (const run of runs(c.key)) {
       if (run.length > 1) out += `<path class="ln" d="${run.map((i, j) => `${j ? 'L' : 'M'}${cx(i).toFixed(1)} ${y(slots[i].v[c.key]).toFixed(1)}`).join('')}"/>`;
       if (dots || run.length === 1) out += run.map(i => `<circle class="pt" cx="${cx(i).toFixed(1)}" cy="${y(slots[i].v[c.key]).toFixed(1)}" r="${dots ? 2.5 : 1.8}"/>`).join('');
-    }
-  } else if (c.kind === 'bars') {
-    const bw = Math.max(1, Math.min(28, gw * (gw > 6 ? 0.62 : 0.8))), rx = bw >= 6 ? 2 : 0;
-    slots.forEach((s, i) => {
-      const v = s.v[c.key]; if (v == null) return;
-      const top = y(v), hgt = Math.max(1, pt + ph - top);
-      out += `<rect class="bar" x="${(cx(i) - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" rx="${rx}"/>`;
-    });
-  } else {
-    const [lean, fat] = LAYERS(), base = pt + ph;
-    for (const run of runs(lean.key)) {
-      const xs = run.length === 1 ? [cx(run[0]) - Math.max(1.5, gw * 0.3), cx(run[0]) + Math.max(1.5, gw * 0.3)] : run.map(cx);
-      const pick = run.length === 1 ? [run[0], run[0]] : run;
-      const yl = pick.map(i => y(slots[i].v[lean.key])), yt = pick.map(i => y(slots[i].v[lean.key] + slots[i].v[fat.key]));
-      const P = (a, b) => xs.map((x, j) => `${j ? 'L' : 'M'}${x.toFixed(1)} ${(a[j] ?? b).toFixed(1)}`).join('');
-      const back = arr => xs.map((x, j) => ({ x, v: arr[j] })).reverse().map(p => `L${p.x.toFixed(1)} ${p.v.toFixed(1)}`).join('');
-      out += `<path class="ar ${lean.cls}" d="${P(yl)}${back(xs.map(() => base))}Z"/>`;
-      out += `<path class="ar ${fat.cls}" d="${P(yt)}${back(yl)}Z"/>`;
-      out += `<path class="edge" d="${P(yl)}"/><path class="edge" d="${P(yt)}"/>`;
     }
   }
   // смена весов: Zepp Life → PICOOC
@@ -240,7 +240,7 @@ function deltaHtml(v, pv, spec, j, i) {
   return `<span class="dl ${cls}">${signed(diff, spec.d)}${spec.du ? ' ' + spec.du : ''} ${pTo(UI.g, SLOTS[j].t, SLOTS[i].t)}</span>`;
 }
 function caption(c, i) {
-  const s = SLOTS[i], n = s.n[c.nkey], lastT = s.last[c.nkey === 'c' ? 'c' : c.key];
+  const s = SLOTS[i], n = s.n[c.nkey], lastT = s.last[c.key];
   const bits = [pLabel(UI.g, s.t)];
   if (n && s.part && lastT) bits[0] += `, по ${ddmm(lastT)}`;
   if (UI.g !== 'day' && n) bits.push(`${n} ${plural(n, 'день', 'дня', 'дней')} ${c.id === 's' ? 'с данными' : 'с замером'}`);
@@ -251,24 +251,22 @@ function readout(c, hover) {
   const i = hover != null ? hover : lastWith(c.nkey);
   if (i < 0) return '<p class="cap">Пока пусто — сюда лягут замеры</p>';
   const s = SLOTS[i], j = s.n[c.nkey] ? prevWith(c.nkey, i) : -1;
-  if (c.kind === 'stack') {
-    const parts = LAYERS().slice().reverse().map(L => {
-      const v = s.v[L.key];
-      if (v == null) return `<span class="pair"><i class="sw ${L.cls}"></i>${L.name} <b>—</b></span>`;
-      return `<span class="pair"><i class="sw ${L.cls}"></i>${L.name} <b>${num(v, L.d)}</b> ${L.unit}${j >= 0 ? ' ' + deltaHtml(v, SLOTS[j].v[L.key], L, j, i) : ''}</span>`;
-    });
-    return `<div class="ro2">${parts.join('')}</div>${caption(c, i)}`;
-  }
   const v = s.v[c.key];
-  if (v == null) return `<div class="big">—</div>${caption(c, i)}`;
-  return `<div class="big">${num(v, c.d)}<span class="u">${c.unit}</span>${j >= 0 ? deltaHtml(v, SLOTS[j].v[c.key], c, j, i) : ''}</div>${caption(c, i)}`;
+  // у жира под цифрой в % — килограммы столбцов, со своей разницей
+  let kg = '';
+  if (c.bars) {
+    const b = c.bars, kv = s.v[b.key], jb = s.n[b.nkey] ? prevWith(b.nkey, i) : -1;
+    kg = `<p class="kg"><i class="sw fat"></i>${kv == null ? '—' : `<b>${num(kv, b.d)}</b> ${b.unit}${jb >= 0 ? ' ' + deltaHtml(kv, SLOTS[jb].v[b.key], b, jb, i) : ''}`}</p>`;
+  }
+  if (v == null) return `<div class="big">—</div>${kg}${caption(c, i)}`;
+  return `<div class="big">${num(v, c.d)}<span class="u">${c.unit}</span>${j >= 0 ? deltaHtml(v, SLOTS[j].v[c.key], c, j, i) : ''}</div>${kg}${caption(c, i)}`;
 }
 
 function chartBlock(c) {
-  const toggle = c.kind === 'stack'
-    ? `<div class="filters sm" role="group" aria-label="Единицы">${[['kg', 'кг'], ['pct', '%']].map(([k, l]) => `<button type="button" data-comp="${k}" aria-pressed="${UI.comp === k}">${l}</button>`).join('')}</div>` : '';
+  // легенда у графика с двумя рядами: линия — %, столбцы — кг
+  const legend = c.bars ? `<div class="lg"><span><i class="sw-ln"></i>%</span><span><i class="sw fat"></i>кг</span></div>` : '';
   return `<section class="ls-block chart">
-    <div class="sec-top"><h2 class="ls-h"><span class="tip" tabindex="0" data-tip="${esc(c.tip)}">${esc(c.title)}</span></h2>${toggle}</div>
+    <div class="sec-top"><h2 class="ls-h"><span class="tip" tabindex="0" data-tip="${esc(c.tip)}">${esc(c.title)}</span></h2>${legend}</div>
     <div class="ro" id="ro-${c.id}">${readout(c, null)}</div>
     ${plot(c, SLOTS)}
   </section>`;
@@ -277,7 +275,7 @@ function chartBlock(c) {
 function render() {
   const W = Math.round(Math.max(300, Math.min(726, root.clientWidth - 34)));
   SLOTS = buildSlots();
-  GEO = { W, pl: 42, pr: 6, pt: 8, pb: 22, y: {} };
+  GEO = { W, pl: 42, pr: CHARTS.some(c => c.bars) ? 38 : 6, pt: 8, pb: 22, y: {} };   // справа место под шкалу кг у жира
   GEO.gw = (W - GEO.pl - GEO.pr) / Math.max(1, SLOTS.length);
   const rOk = r => r === 'all' || slotCount(UI.g, r) >= 3;
   const ctr = `<div class="controls">
@@ -299,8 +297,7 @@ function hoverTo(i) {
     if (i == null) { g.setAttribute('visibility', 'hidden'); continue; }
     const x = (GEO.pl + GEO.gw * (i + 0.5)).toFixed(1), s = SLOTS[i], y = GEO.y[c.id];
     let dots = '';
-    if (c.kind === 'line' && s.v[c.key] != null) dots = `<circle class="hd" cx="${x}" cy="${y(s.v[c.key]).toFixed(1)}" r="4"/>`;
-    if (c.kind === 'stack') { const [l, f] = LAYERS(); if (s.v[l.key] != null) dots = [s.v[l.key], s.v[l.key] + s.v[f.key]].map(v => `<circle class="hd" cx="${x}" cy="${y(v).toFixed(1)}" r="4"/>`).join(''); }
+    if ((c.kind === 'line' || c.kind === 'combo') && s.v[c.key] != null) dots = `<circle class="hd" cx="${x}" cy="${y(s.v[c.key]).toFixed(1)}" r="4"/>`;
     g.innerHTML = `<line class="xh" x1="${x}" x2="${x}" y1="${GEO.pt}" y2="${(c.h - GEO.pb).toFixed(1)}"/>${dots}`;
     g.setAttribute('visibility', 'visible');
   }
@@ -319,7 +316,6 @@ root.addEventListener('click', e => {
   if (!b || b.disabled) return;
   if (b.dataset.g) { UI.g = b.dataset.g; UI.r = R_DEF[UI.g]; keepUI(); render(); }
   else if (b.dataset.r) { UI.r = b.dataset.r; keepUI(); render(); }
-  else if (b.dataset.comp) { UI.comp = b.dataset.comp; keepUI(); render(); }
 });
 root.addEventListener('submit', e => {
   if (e.target.id !== 'login') return;
