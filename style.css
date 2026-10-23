@@ -4,7 +4,7 @@
   --ink: #211c1c; --ink-muted: #6b6b6b; --accent: #e0679a;
   --good: #138540; --bad: #d4433a;
   --wave: #ededfe; /* волна под заголовком — цвета фона иконки, без затемнения */
-  --c-fat: #ffe5eb; --c-steps: #fef7c9; /* жир в кг — розовый, шаги — лимонный */
+  --c-weight: #d9f5ff; --c-steps: #fef7c9; /* вес — голубой, шаги — лимонный */
   --bar-line: rgba(33, 28, 28, .22);
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px; --space-8: 32px;
   --radius-sm: 4px; --radius-md: 6px;
@@ -56,15 +56,6 @@ button { background: none; border: 0; padding: 0; cursor: pointer; -webkit-tap-h
 .big .u { font-family: var(--font-body); font-size: 14px; color: var(--ink-muted); margin-left: -2px; }
 .dl { font-family: var(--font-body); font-size: 13px; line-height: 18px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 .dl.good { color: var(--good); } .dl.bad { color: var(--bad); }
-/* у жира: килограммы под цифрой в % и легенда «линия — %, столбцы — кг» */
-.kg { margin: 2px 0 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 6px; font-size: 14px; line-height: 22px; color: var(--ink-muted); }
-.kg b { font-family: var(--font-display); font-weight: 400; font-size: 20px; color: var(--ink); font-variant-numeric: tabular-nums; }
-.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; box-shadow: inset 0 0 0 1px var(--bar-line); align-self: center; flex: none; }
-.sw.fat { background: var(--c-fat); }
-.sw-ln { display: inline-block; width: 14px; height: 0; border-top: 1.75px solid var(--ink); align-self: center; }
-.lg { display: flex; gap: var(--space-3); font-size: 12.5px; line-height: 16px; color: var(--ink-muted); }
-.lg span { display: inline-flex; align-items: center; gap: 6px; }
-
 /* графики */
 svg.plot { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
 .plot .grid { stroke: var(--line); stroke-width: 1; }
@@ -75,7 +66,7 @@ svg.plot { display: block; width: 100%; height: auto; overflow: visible; touch-a
 .plot .ln { fill: none; stroke: var(--ink); stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round; }
 .plot .pt { fill: var(--ink); }
 .plot .bar { fill: var(--c-steps); stroke: var(--bar-line); stroke-width: 1; }
-.plot .bar.fat { fill: var(--c-fat); }
+.plot .bar.weight { fill: var(--c-weight); }
 .plot .goal { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 5 4; }
 .plot .mark { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 3 3; }
 .plot .mk { font-size: 10.5px; }

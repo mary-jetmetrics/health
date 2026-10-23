@@ -102,30 +102,28 @@ function buildSlots() {
   const slots = [];
   let k = 0;
   for (let t = rangeStart(UI.g, UI.r); t <= LAST; t = pNext(UI.g, t)) {
-    const e = pNext(UI.g, t), acc = { w: [], f: [], fk: [], s: [] }, last = {};
+    const e = pNext(UI.g, t), acc = { w: [], f: [], s: [] }, last = {};
     while (k < DAYS.length && DAYS[k].t < t) k++;
     for (; k < DAYS.length && DAYS[k].t < e; k++) {
       const x = DAYS[k];
       for (const key of ['w', 'f', 's']) if (x[key] != null) { acc[key].push(x[key]); last[key] = x.t; }
-      if (x.fk != null) { acc.fk.push(x.fk); last.c = x.t; }
     }
     const v = {};
     for (const key in acc) v[key] = avg(acc[key]);
-    slots.push({ t, e, v, n: { w: acc.w.length, f: acc.f.length, c: acc.fk.length, s: acc.s.length }, last, part: e - DAY > LAST });
+    slots.push({ t, e, v, n: { w: acc.w.length, f: acc.f.length, s: acc.s.length }, last, part: e - DAY > LAST });
   }
   return slots;
 }
 
 /* ---------- графики ---------- */
-const TIP_W = 'Среднее по дням с замером; если взвешивалась несколько раз за день — среднее за день. Вес — с весов и ручных записей в «Здоровье».';
-const TIP_F = 'Линия — жир в %, шкала слева. Столбцы — жир в кг (вес на весах × % жира), шкала справа. Пунктир по горизонтали — цель 30%. Весы считают жир через воду в теле, поэтому день ото дня он прыгает: внутри месяца разброс до ±2,7 п. п. Сравнивай месяцами, а не днями. Пунктир по вертикали — смена весов: до февраля 2025 Zepp Life, после — PICOOC; приборы считают по-разному, скачок на стыке может быть от весов, а не от тела.';
+const TIP_W = 'Среднее по дням с замером; если взвешивалась несколько раз за день — среднее за день. Вес — с весов и ручных записей в «Здоровье». Столбцы начинаются не с нуля, а с низа шкалы — иначе разница в килограмм не видна.';
+const TIP_F = 'Пунктир по горизонтали — цель 30%. Весы считают жир через воду в теле, поэтому день ото дня он прыгает: внутри месяца разброс до ±2,7 п. п. Сравнивай месяцами, а не днями. Пунктир по вертикали — смена весов: до февраля 2025 Zepp Life, после — PICOOC; приборы считают по-разному, скачок на стыке может быть от весов, а не от тела.';
 const TIP_S = 'Шаги с айфона и часов без двойного счёта: за каждый час берётся тот, кто насчитал больше. Среднее за день по дням с данными; день выгрузки не берётся — он неполный.';
 // sign: −1 — меньше значит лучше, +1 — больше лучше, 0 — без оценки
 const CHARTS = [
-  { id: 'w', title: 'Вес', tip: TIP_W, kind: 'line', key: 'w', nkey: 'w', unit: 'кг', d: 1, du: 'кг', sign: 0, h: 168 },
-  // жир: линия в % (шкала слева от 25%) и столбцы в кг (шкала справа), пунктир — цель 30% (Мария, 23.10.26)
-  { id: 'f', title: 'Жир', tip: TIP_F, kind: 'combo', key: 'f', nkey: 'f', unit: '%', d: 1, du: 'п. п.', sign: -1, h: 184, scales: true, from: 25, goal: 30,
-    bars: { key: 'fk', nkey: 'c', unit: 'кг жира', d: 1, du: 'кг', sign: -1 } },
+  { id: 'w', title: 'Вес', tip: TIP_W, kind: 'bars', zero: false, key: 'w', nkey: 'w', unit: 'кг', d: 1, du: 'кг', sign: 0, h: 168, color: 'weight' },
+  // жир: линия в % со шкалой от 25%, пунктир — цель 30% (Мария, 23.10.26)
+  { id: 'f', title: 'Жир', tip: TIP_F, kind: 'line', key: 'f', nkey: 'f', unit: '%', d: 1, du: 'п.\u00a0п.', sign: -1, h: 168, scales: true, from: 25, goal: 30 },
   { id: 's', title: 'Шаги', tip: TIP_S, kind: 'bars', key: 's', nkey: 's', unit: 'в день', d: 0, du: '', sign: 1, h: 150 },
 ];
 
@@ -167,22 +165,13 @@ function plot(c, slots) {
     const n = Math.max(1, Math.ceil((top - c.from) / step - 1e-9));
     sc = { lo: c.from, hi: c.from + n * step, ticks: Array.from({ length: n + 1 }, (_, i) => c.from + i * step), dec: step < 1 ? 1 : 0 };
   } else {
-    sc = vals.length ? niceScale(Math.min(...vals), Math.max(...vals), 4, c.kind === 'bars') : { lo: 0, hi: 1, ticks: [], dec: 0 };
+    sc = vals.length ? niceScale(Math.min(...vals), Math.max(...vals), 4, c.kind === 'bars' && c.zero !== false) : { lo: 0, hi: 1, ticks: [], dec: 0 };
   }
   const y = v => pt + ph - (v - sc.lo) / (sc.hi - sc.lo) * ph;
   GEO.y[c.id] = y;
-  // вторая шкала справа (кг) — с нуля и с тем же числом делений, чтобы подписи легли на те же линии сетки
-  let y2 = null, sc2 = null;
-  if (c.bars) {
-    const n = sc.ticks.length - 1, kv = slots.map(s => s.v[c.bars.key]).filter(v => v != null);
-    const step = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30].find(k => k * n >= (kv.length ? Math.max(...kv) : 1)) || 50;
-    sc2 = { hi: step * n, ticks: Array.from({ length: n + 1 }, (_, i) => i * step) };
-    y2 = v => pt + ph - v / sc2.hi * ph;
-  }
   // сетка и подписи значений
   sc.ticks.forEach((v, i) => {
     out += `<line class="grid" x1="${pl}" x2="${W - pr}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="yl" x="${pl - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${num(v, sc.dec)}${c.from != null ? '%' : ''}</text>`;
-    if (sc2) out += `<text class="yl" x="${W - pr + 6}" y="${(y(v) + 4).toFixed(1)}">${num(sc2.ticks[i])}${i === sc.ticks.length - 1 ? ' кг' : ''}</text>`;
   });
   // подписи времени
   // у правого края подпись уходит влево от отметки, чтобы не вылезать за блок
@@ -205,13 +194,12 @@ function plot(c, slots) {
       out += `<rect class="${cls}" x="${(cx(i) - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" rx="${rx}"/>`;
     });
   };
-  if (c.kind === 'bars') bars(c.key, y, 'bar');
-  if (c.bars) bars(c.bars.key, y2, 'bar fat');   // столбцы под линией
+  if (c.kind === 'bars') bars(c.key, y, c.color ? 'bar ' + c.color : 'bar');
   if (c.goal) {
     const gy = y(c.goal).toFixed(1);
     out += `<line class="goal" x1="${pl}" x2="${W - pr}" y1="${gy}" y2="${gy}"/><text class="mk" x="${pl + 6}" y="${(+gy - 5).toFixed(1)}">цель ${c.goal}%</text>`;
   }
-  if (c.kind === 'line' || c.kind === 'combo') {
+  if (c.kind === 'line') {
     const dots = n <= 70;
     for (const run of runs(c.key)) {
       if (run.length > 1) out += `<path class="ln" d="${run.map((i, j) => `${j ? 'L' : 'M'}${cx(i).toFixed(1)} ${y(slots[i].v[c.key]).toFixed(1)}`).join('')}"/>`;
@@ -252,21 +240,13 @@ function readout(c, hover) {
   if (i < 0) return '<p class="cap">Пока пусто — сюда лягут замеры</p>';
   const s = SLOTS[i], j = s.n[c.nkey] ? prevWith(c.nkey, i) : -1;
   const v = s.v[c.key];
-  // у жира под цифрой в % — килограммы столбцов, со своей разницей
-  let kg = '';
-  if (c.bars) {
-    const b = c.bars, kv = s.v[b.key], jb = s.n[b.nkey] ? prevWith(b.nkey, i) : -1;
-    kg = `<p class="kg"><i class="sw fat"></i>${kv == null ? '—' : `<b>${num(kv, b.d)}</b> ${b.unit}${jb >= 0 ? ' ' + deltaHtml(kv, SLOTS[jb].v[b.key], b, jb, i) : ''}`}</p>`;
-  }
-  if (v == null) return `<div class="big">—</div>${kg}${caption(c, i)}`;
-  return `<div class="big">${num(v, c.d)}<span class="u">${c.unit}</span>${j >= 0 ? deltaHtml(v, SLOTS[j].v[c.key], c, j, i) : ''}</div>${kg}${caption(c, i)}`;
+  if (v == null) return `<div class="big">—</div>${caption(c, i)}`;
+  return `<div class="big">${num(v, c.d)}<span class="u">${c.unit}</span>${j >= 0 ? deltaHtml(v, SLOTS[j].v[c.key], c, j, i) : ''}</div>${caption(c, i)}`;
 }
 
 function chartBlock(c) {
-  // легенда у графика с двумя рядами: линия — %, столбцы — кг
-  const legend = c.bars ? `<div class="lg"><span><i class="sw-ln"></i>%</span><span><i class="sw fat"></i>кг</span></div>` : '';
   return `<section class="ls-block chart">
-    <div class="sec-top"><h2 class="ls-h"><span class="tip" tabindex="0" data-tip="${esc(c.tip)}">${esc(c.title)}</span></h2>${legend}</div>
+    <div class="sec-top"><h2 class="ls-h"><span class="tip" tabindex="0" data-tip="${esc(c.tip)}">${esc(c.title)}</span></h2></div>
     <div class="ro" id="ro-${c.id}">${readout(c, null)}</div>
     ${plot(c, SLOTS)}
   </section>`;
@@ -275,7 +255,7 @@ function chartBlock(c) {
 function render() {
   const W = Math.round(Math.max(300, Math.min(726, root.clientWidth - 34)));
   SLOTS = buildSlots();
-  GEO = { W, pl: 42, pr: CHARTS.some(c => c.bars) ? 38 : 6, pt: 8, pb: 22, y: {} };   // справа место под шкалу кг у жира
+  GEO = { W, pl: 42, pr: 6, pt: 8, pb: 22, y: {} };
   GEO.gw = (W - GEO.pl - GEO.pr) / Math.max(1, SLOTS.length);
   const rOk = r => r === 'all' || slotCount(UI.g, r) >= 3;
   const ctr = `<div class="controls">
@@ -297,7 +277,7 @@ function hoverTo(i) {
     if (i == null) { g.setAttribute('visibility', 'hidden'); continue; }
     const x = (GEO.pl + GEO.gw * (i + 0.5)).toFixed(1), s = SLOTS[i], y = GEO.y[c.id];
     let dots = '';
-    if ((c.kind === 'line' || c.kind === 'combo') && s.v[c.key] != null) dots = `<circle class="hd" cx="${x}" cy="${y(s.v[c.key]).toFixed(1)}" r="4"/>`;
+    if (c.kind === 'line' && s.v[c.key] != null) dots = `<circle class="hd" cx="${x}" cy="${y(s.v[c.key]).toFixed(1)}" r="4"/>`;
     g.innerHTML = `<line class="xh" x1="${x}" x2="${x}" y1="${GEO.pt}" y2="${(c.h - GEO.pb).toFixed(1)}"/>${dots}`;
     g.setAttribute('visibility', 'visible');
   }
