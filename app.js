@@ -82,10 +82,11 @@ const saved = (() => { try { return JSON.parse(LS.get('hl-ui') || '{}'); } catch
 const UI = {
   g: GS.some(x => x[0] === saved.g) ? saved.g : 'month',
   r: RS.some(x => x[0] === saved.r) ? saved.r : null,
+  act: saved.act === 's' ? 's' : 'a',   // активность: a — калории кольца «Движение» (по умолчанию), s — шаги
   hover: null,
 };
 if (!UI.r) UI.r = R_DEF[UI.g];
-const keepUI = () => LS.set('hl-ui', JSON.stringify({ g: UI.g, r: UI.r }));
+const keepUI = () => LS.set('hl-ui', JSON.stringify({ g: UI.g, r: UI.r, act: UI.act }));
 const COARSE = () => ['month', 'quarter', 'half', 'year'].includes(UI.g);   // цвет «лучше / хуже» — только от месяца: день к дню у весов — вода
 
 /* ---------- периоды и средние ---------- */
@@ -102,15 +103,15 @@ function buildSlots() {
   const slots = [];
   let k = 0;
   for (let t = rangeStart(UI.g, UI.r); t <= LAST; t = pNext(UI.g, t)) {
-    const e = pNext(UI.g, t), acc = { w: [], f: [], s: [] }, last = {};
+    const e = pNext(UI.g, t), acc = { w: [], f: [], s: [], a: [] }, last = {};
     while (k < DAYS.length && DAYS[k].t < t) k++;
     for (; k < DAYS.length && DAYS[k].t < e; k++) {
       const x = DAYS[k];
-      for (const key of ['w', 'f', 's']) if (x[key] != null) { acc[key].push(x[key]); last[key] = x.t; }
+      for (const key of ['w', 'f', 's', 'a']) if (x[key] != null) { acc[key].push(x[key]); last[key] = x.t; }
     }
     const v = {};
     for (const key in acc) v[key] = avg(acc[key]);
-    slots.push({ t, e, v, n: { w: acc.w.length, f: acc.f.length, s: acc.s.length }, last, part: e - DAY > LAST });
+    slots.push({ t, e, v, n: { w: acc.w.length, f: acc.f.length, s: acc.s.length, a: acc.a.length }, last, part: e - DAY > LAST });
   }
   return slots;
 }
@@ -118,13 +119,15 @@ function buildSlots() {
 /* ---------- графики ---------- */
 const TIP_W = 'Среднее по дням с замером; если взвешивалась несколько раз за день — среднее за день. Вес — с весов и ручных записей в «Здоровье». Столбцы начинаются не с нуля, а с низа шкалы — иначе разница в килограмм не видна.';
 const TIP_F = 'Пунктир по горизонтали — цель 30%. Весы считают жир через воду в теле, поэтому день ото дня он прыгает: внутри месяца разброс до ±2,7 п. п. Сравнивай месяцами, а не днями. Пунктир по вертикали — смена весов: до февраля 2025 Zepp Life, после — PICOOC; приборы считают по-разному, скачок на стыке может быть от весов, а не от тела.';
-const TIP_S = 'Шаги с айфона и часов без двойного счёта: за каждый час берётся тот, кто насчитал больше. Среднее за день по дням с данными; день выгрузки не берётся — он неполный.';
+const TIP_S = 'Шаги с айфона и часов без двойного счёта: за каждый час берётся тот, кто насчитал больше (с айфона после 12.10.2026 — только часы). Среднее за день по дням с данными; сегодняшний день не берётся — он неполный.';
+const TIP_A = 'Калории кольца «Движение» — активная энергия, которую считают часы. С 20.04.2024: кольцо было и раньше, но без часов айфон считал в 7–10 раз меньше, такие цифры не сравнимы. Среднее за день по дням с данными; сегодняшний день не берётся — он неполный.';
 // sign: −1 — меньше значит лучше, +1 — больше лучше, 0 — без оценки
 const CHARTS = [
   { id: 'w', title: 'Вес', tip: TIP_W, kind: 'bars', zero: false, key: 'w', nkey: 'w', unit: 'кг', d: 1, du: 'кг', sign: 0, h: 168, color: 'weight' },
   // жир: линия в % со шкалой от 25%, пунктир — цель 30% (Мария, 23.10.26)
   { id: 'f', title: 'Жир', tip: TIP_F, kind: 'line', key: 'f', nkey: 'f', unit: '%', d: 1, du: 'п.\u00a0п.', sign: -1, h: 168, scales: true, from: 25, goal: 30 },
-  { id: 's', title: 'Шаги', tip: TIP_S, kind: 'bars', key: 's', nkey: 's', unit: 'в день', d: 0, du: '', sign: 1, h: 150 },
+  // активность — переключатель «шаги / ккал» (Мария, 24.10.26): поля подставляются из ACT[UI.act]
+  { id: 's', title: 'Активность', kind: 'bars', d: 0, sign: 1, h: 150, act: true },
 ];
 
 function niceScale(min, max, count, fromZero) {
@@ -240,6 +243,13 @@ function plot(c, slots) {
   return `<svg class="plot" data-c="${c.id}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(c.title)}: средние по периодам">${out}</svg>`;
 }
 
+const ACT = {
+  s: { key: 's', nkey: 's', unit: 'шагов в день', du: '', tip: TIP_S, color: '' },
+  a: { key: 'a', nkey: 'a', unit: 'ккал в день', du: 'ккал', tip: TIP_A, color: 'move' },
+};
+const setAct = () => CHARTS.forEach(c => c.act && Object.assign(c, ACT[UI.act]));
+setAct();
+
 /* ---------- цифра над графиком: выбранный период или последний с данными ---------- */
 let SLOTS = [];
 const lastWith = nkey => { for (let i = SLOTS.length - 1; i >= 0; i--) if (SLOTS[i].n[nkey]) return i; return -1; };
@@ -268,7 +278,7 @@ function readout(c, hover) {
 
 function chartBlock(c) {
   return `<section class="ls-block chart">
-    <div class="sec-top"><h2 class="ls-h"><span class="tip" tabindex="0" data-tip="${esc(c.tip)}">${esc(c.title)}</span></h2></div>
+    <div class="sec-top"><h2 class="ls-h"><span class="tip" tabindex="0" data-tip="${esc(c.tip)}">${esc(c.title)}</span></h2>${c.act ? `<div class="filters sm" role="group" aria-label="Что показать">${[['s', 'шаги'], ['a', 'ккал']].map(([k, l]) => `<button type="button" data-act="${k}" aria-pressed="${UI.act === k}">${l}</button>`).join('')}</div>` : ''}</div>
     <div class="ro" id="ro-${c.id}">${readout(c, null)}</div>
     ${plot(c, SLOTS)}
   </section>`;
@@ -318,6 +328,7 @@ root.addEventListener('click', e => {
   if (!b || b.disabled) return;
   if (b.dataset.g) { UI.g = b.dataset.g; UI.r = R_DEF[UI.g]; keepUI(); render(); }
   else if (b.dataset.r) { UI.r = b.dataset.r; keepUI(); render(); }
+  else if (b.dataset.act) { UI.act = b.dataset.act; setAct(); keepUI(); render(); }
 });
 root.addEventListener('submit', e => {
   if (e.target.id !== 'login') return;

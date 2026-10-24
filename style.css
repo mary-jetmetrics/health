@@ -4,7 +4,7 @@
   --ink: #211c1c; --ink-muted: #6b6b6b; --accent: #e0679a;
   --good: #138540; --bad: #d4433a;
   --wave: #ededfe; /* волна под заголовком — цвета фона иконки, без затемнения */
-  --c-weight: #d9f5ff; --c-steps: #fef7c9; /* вес — голубой, шаги — лимонный */
+  --c-weight: #d9f5ff; --c-steps: #fef7c9; --c-move: #ffe5eb; /* вес — голубой, шаги — лимонный, калории — розовый, как кольцо «Движение» */
   --bar-line: rgba(33, 28, 28, .22);
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px; --space-8: 32px;
   --radius-sm: 4px; --radius-md: 6px;
@@ -66,6 +66,7 @@ svg.plot { display: block; width: 100%; height: auto; overflow: visible; touch-a
 .plot .pt { fill: var(--ink); }
 .plot .bar { fill: var(--c-steps); stroke: var(--bar-line); stroke-width: 1; }
 .plot .bar.weight { fill: var(--c-weight); }
+.plot .bar.move { fill: var(--c-move); }
 .plot .goal { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 5 4; }
 .plot .mark { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 3 3; }
 .plot .mk { font-size: 10.5px; }
