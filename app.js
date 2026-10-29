@@ -79,7 +79,7 @@ const GS = [['day', 'день'], ['week', 'неделю'], ['month', 'месяц
 // показ: с начала недели / месяца / года, последние N дней, всё время (Мария, 29.10.26); третье — подсказка на кнопке
 const RS = [['wtd', 'WTD', 'с начала недели'], ['mtd', 'MTD', 'с начала месяца'], ['ytd', 'YTD', 'с начала года'],
   ['30d', '30 дней', 'последние 30 дней'], ['90d', '90 дней', 'последние 90 дней'], ['180d', '180 дней', 'последние 180 дней'], ['all', 'всё время', 'с первого замера']];
-const R_DEF = { day: '90d', week: '180d', month: 'all', quarter: 'all', half: 'all', year: 'all' };   // показ по умолчанию для шага
+const R_DEF = { day: '90d', week: '180d', month: 'all', quarter: 'all', half: 'all', year: 'all' };   // показ при первом открытии; дальше выбор Марии, без ограничений (29.10.26)
 const saved = (() => { try { return JSON.parse(LS.get('hl-ui') || '{}'); } catch (e) { return {}; } })();
 const UI = {
   g: GS.some(x => x[0] === saved.g) ? saved.g : 'month',
@@ -99,7 +99,6 @@ function rangeStart(g, r) {
     : r === 'ytd' ? Date.UTC(y, 0, 1) : LAST - (parseInt(r, 10) - 1) * DAY;
   return Math.max(pStart(g, FIRST), pStart(g, from));
 }
-const slotCount = (g, r) => { let n = 0; for (let t = rangeStart(g, r); t <= LAST; t = pNext(g, t)) n++; return n; };
 const avg = xs => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 // слот = период; в каждом среднее по дням, где есть значение, число таких дней и последний день
 function buildSlots() {
@@ -291,14 +290,12 @@ function chartBlock(c) {
 
 function render() {
   const W = Math.round(Math.max(300, Math.min(726, root.clientWidth - 34)));
-  const rOk = r => r === 'all' || slotCount(UI.g, r) >= 3;
-  if (!rOk(UI.r)) UI.r = R_DEF[UI.g];   // запомненный WTD в понедельник, YTD в январе — меньше трёх точек
   SLOTS = buildSlots();
   GEO = { W, pl: 42, pr: 6, pt: 8, pb: 22, y: {} };
   GEO.gw = (W - GEO.pl - GEO.pr) / Math.max(1, SLOTS.length);
   const ctr = `<div class="controls">
     <div class="ctl"><span class="cap">Среднее за</span><div class="filters" role="group" aria-label="Среднее за">${GS.map(([k, l]) => `<button type="button" data-g="${k}" aria-pressed="${UI.g === k}">${l}</button>`).join('')}</div></div>
-    <div class="ctl"><span class="cap">Показать</span><div class="filters" role="group" aria-label="Показать">${RS.map(([k, l, tip]) => `<button type="button" data-r="${k}" title="${tip}" aria-pressed="${UI.r === k}"${rOk(k) ? '' : ' disabled'}>${l}</button>`).join('')}</div></div>
+    <div class="ctl"><span class="cap">Показать</span><div class="filters" role="group" aria-label="Показать">${RS.map(([k, l, tip]) => `<button type="button" data-r="${k}" title="${tip}" aria-pressed="${UI.r === k}">${l}</button>`).join('')}</div></div>
   </div>`;
   root.innerHTML = `${head(`Apple Health по ${ddmm(toT(D.updated))}.${D.updated.slice(0, 4)} · как считается — в подсказке у названия графика`)}${ctr}${CHARTS.map(chartBlock).join('')}`;
   UI.hover = null; lastW = root.clientWidth;
@@ -332,7 +329,7 @@ root.addEventListener('pointerout', e => { const svg = e.target.closest && e.tar
 root.addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b || b.disabled) return;
-  if (b.dataset.g) { UI.g = b.dataset.g; UI.r = R_DEF[UI.g]; keepUI(); render(); }
+  if (b.dataset.g) { UI.g = b.dataset.g; keepUI(); render(); }
   else if (b.dataset.r) { UI.r = b.dataset.r; keepUI(); render(); }
   else if (b.dataset.act) { UI.act = b.dataset.act; setAct(); keepUI(); render(); }
 });
