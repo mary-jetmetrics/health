@@ -76,8 +76,10 @@ function pTo(g, t, cur) {
 
 /* ---------- настройки экрана ---------- */
 const GS = [['day', 'день'], ['week', 'неделю'], ['month', 'месяц'], ['quarter', 'квартал'], ['half', 'полгода'], ['year', 'год']];
-const RS = [['3m', '3 месяца', 3], ['1y', 'год', 12], ['3y', '3 года', 36], ['all', 'всё', 0]];
-const R_DEF = { day: '3m', week: '1y', month: 'all', quarter: 'all', half: 'all', year: 'all' };   // показ по умолчанию для шага
+// показ: с начала недели / месяца / года, последние N дней, всё время (Мария, 29.10.26); третье — подсказка на кнопке
+const RS = [['wtd', 'WTD', 'с начала недели'], ['mtd', 'MTD', 'с начала месяца'], ['ytd', 'YTD', 'с начала года'],
+  ['30d', '30 дней', 'последние 30 дней'], ['90d', '90 дней', 'последние 90 дней'], ['180d', '180 дней', 'последние 180 дней'], ['all', 'всё время', 'с первого замера']];
+const R_DEF = { day: '90d', week: '180d', month: 'all', quarter: 'all', half: 'all', year: 'all' };   // показ по умолчанию для шага
 const saved = (() => { try { return JSON.parse(LS.get('hl-ui') || '{}'); } catch (e) { return {}; } })();
 const UI = {
   g: GS.some(x => x[0] === saved.g) ? saved.g : 'month',
@@ -90,11 +92,12 @@ const keepUI = () => LS.set('hl-ui', JSON.stringify({ g: UI.g, r: UI.r, act: UI.
 const COARSE = () => ['month', 'quarter', 'half', 'year'].includes(UI.g);   // цвет «лучше / хуже» — только от месяца: день к дню у весов — вода
 
 /* ---------- периоды и средние ---------- */
+// начало показа — от последнего дня с данными; первый период берётся целиком, как и остальные
 function rangeStart(g, r) {
-  const months = RS.find(x => x[0] === r)[2];
-  if (!months) return pStart(g, FIRST);
-  const [y, m, d] = ymd(LAST);
-  return Math.max(pStart(g, FIRST), pStart(g, Date.UTC(y, m - months, d) + DAY));
+  const [y, m] = ymd(LAST);
+  const from = r === 'all' ? FIRST : r === 'wtd' ? pStart('week', LAST) : r === 'mtd' ? Date.UTC(y, m, 1)
+    : r === 'ytd' ? Date.UTC(y, 0, 1) : LAST - (parseInt(r, 10) - 1) * DAY;
+  return Math.max(pStart(g, FIRST), pStart(g, from));
 }
 const slotCount = (g, r) => { let n = 0; for (let t = rangeStart(g, r); t <= LAST; t = pNext(g, t)) n++; return n; };
 const avg = xs => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
@@ -220,15 +223,17 @@ function plot(c, slots) {
   if (idx.length) {
     const lbl = v => num(v, c.d), wpx = Math.max(...idx.map(i => lbl(slots[i].v[c.key]).length)) * 5.8 + 6;
     const k = Math.max(1, Math.ceil(wpx / gw));
-    let prev = Infinity;
+    let prev = Infinity, prevL = Infinity;   // prevL — левый край последней поставленной подписи: прижатая к краю не наезжает на соседнюю
     for (let q = idx.length - 1; q >= 0; q--) {
       const i = idx[q];
       if (prev - i < k) continue;
-      prev = i;
       const v = slots[i].v[c.key], x = cx(i), yy = y(v);
       const ty = c.kind === 'bars' ? Math.max(pt + 2, yy - 4) : (yy - 8 < pt + 6 ? yy + 15 : yy - 8);
       const anchor = x + wpx / 2 > W - pr + 4 ? 'end' : x - wpx / 2 < pl - 4 ? 'start' : 'middle';
-      out += `<text class="dv" x="${x.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="${anchor}">${lbl(v)}</text>`;
+      const L = anchor === 'end' ? x - wpx : anchor === 'start' ? x : x - wpx / 2;
+      if (L + wpx > prevL) continue;
+      prev = i; prevL = L;
+      out +=`<text class="dv" x="${x.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="${anchor}">${lbl(v)}</text>`;
     }
   }
   // смена весов: Zepp Life → PICOOC
@@ -286,13 +291,14 @@ function chartBlock(c) {
 
 function render() {
   const W = Math.round(Math.max(300, Math.min(726, root.clientWidth - 34)));
+  const rOk = r => r === 'all' || slotCount(UI.g, r) >= 3;
+  if (!rOk(UI.r)) UI.r = R_DEF[UI.g];   // запомненный WTD в понедельник, YTD в январе — меньше трёх точек
   SLOTS = buildSlots();
   GEO = { W, pl: 42, pr: 6, pt: 8, pb: 22, y: {} };
   GEO.gw = (W - GEO.pl - GEO.pr) / Math.max(1, SLOTS.length);
-  const rOk = r => r === 'all' || slotCount(UI.g, r) >= 3;
   const ctr = `<div class="controls">
     <div class="ctl"><span class="cap">Среднее за</span><div class="filters" role="group" aria-label="Среднее за">${GS.map(([k, l]) => `<button type="button" data-g="${k}" aria-pressed="${UI.g === k}">${l}</button>`).join('')}</div></div>
-    <div class="ctl"><span class="cap">Показать</span><div class="filters" role="group" aria-label="Показать">${RS.map(([k, l]) => `<button type="button" data-r="${k}" aria-pressed="${UI.r === k}"${rOk(k) ? '' : ' disabled'}>${l}</button>`).join('')}</div></div>
+    <div class="ctl"><span class="cap">Показать</span><div class="filters" role="group" aria-label="Показать">${RS.map(([k, l, tip]) => `<button type="button" data-r="${k}" title="${tip}" aria-pressed="${UI.r === k}"${rOk(k) ? '' : ' disabled'}>${l}</button>`).join('')}</div></div>
   </div>`;
   root.innerHTML = `${head(`Apple Health по ${ddmm(toT(D.updated))}.${D.updated.slice(0, 4)} · как считается — в подсказке у названия графика`)}${ctr}${CHARTS.map(chartBlock).join('')}`;
   UI.hover = null; lastW = root.clientWidth;
