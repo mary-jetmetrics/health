@@ -119,15 +119,15 @@ function buildSlots() {
 }
 
 /* ---------- графики ---------- */
-const TIP_W = 'Среднее по дням с замером; если взвешивалась несколько раз за день — среднее за день. Вес — с весов и ручных записей в «Здоровье».';
+const TIP_W = 'Среднее по дням с замером; если взвешивалась несколько раз за день — среднее за день. Вес — с весов и ручных записей в «Здоровье». Столбцы начинаются не с нуля, а с низа шкалы — иначе разница в килограмм не видна.';
 const TIP_F = 'Пунктир по горизонтали — цель 30%. Весы считают жир через воду в теле, поэтому день ото дня он прыгает: внутри месяца разброс до ±2,7 п. п. Сравнивай месяцами, а не днями. Пунктир по вертикали — смена весов: до февраля 2025 Zepp Life, после — PICOOC; приборы считают по-разному, скачок на стыке может быть от весов, а не от тела.';
 const TIP_S = 'Шаги с айфона и часов без двойного счёта: за каждый час берётся тот, кто насчитал больше (с айфона после 12.10.2026 — только часы). Среднее за день по дням с данными; сегодняшний день не берётся — он неполный.';
 const TIP_A = 'Калории кольца «Движение» — активная энергия, которую считают часы. С 20.04.2024: кольцо было и раньше, но без часов айфон считал в 7–10 раз меньше, такие цифры не сравнимы. Среднее за день по дням с данными; сегодняшний день не берётся — он неполный.';
 // sign: −1 — меньше значит лучше, +1 — больше лучше, 0 — без оценки
 const CHARTS = [
-  { id: 'w', title: 'Вес', tip: TIP_W, kind: 'bars', key: 'w', nkey: 'w', unit: 'кг', d: 1, du: 'кг', sign: 0, h: 168, color: 'weight' },
-  // жир: линия в % со шкалой от 25%, пунктир — цель 30% (Мария, 23.10.26)
-  { id: 'f', title: 'Жир', tip: TIP_F, kind: 'line', key: 'f', nkey: 'f', unit: '%', d: 1, du: 'п.\u00a0п.', sign: -1, h: 168, scales: true, from: 25, goal: 30 },
+  { id: 'w', title: 'Вес', tip: TIP_W, kind: 'bars', zero: false, key: 'w', nkey: 'w', unit: 'кг', d: 1, du: 'кг', sign: 0, h: 168, color: 'weight' },
+  // жир: линия в % со шкалой от 30% (Мария, 29.10.26; было от 25%), пунктир — цель 30%
+  { id: 'f', title: 'Жир', tip: TIP_F, kind: 'line', key: 'f', nkey: 'f', unit: '%', d: 1, du: 'п.\u00a0п.', sign: -1, h: 168, scales: true, from: 30, goal: 30 },
   // активность — переключатель «шаги / ккал» (Мария, 24.10.26): поля подставляются из ACT[UI.act]
   { id: 's', title: 'Активность', kind: 'bars', d: 0, sign: 1, h: 150, act: true },
 ];
@@ -151,10 +151,14 @@ function xTicks(slots, gw) {
     if (t < s.e) cand.push({ i, m: ymd(t)[1], y: ymd(t)[0] });
   });
   const levels = [c => true, c => c.m % 3 === 0, c => c.m === 0, c => c.m === 0 && c.y % 2 === 0, c => c.m === 0 && c.y % 5 === 0];
+  // январь подписывается годом, только если на графике больше одного года: в YTD «2026» под январём читалось как весь год;
+  // у кварталов — «II кв», а не месяц начала
+  const many = ymd(slots[0].t)[0] !== ymd(slots[slots.length - 1].t)[0], q = UI.g === 'quarter';
+  const lbl = c => c.m === 0 && many ? String(c.y) : q ? `${ROM[c.m / 3]}\u00a0кв` : MON_S[c.m];
   for (const ok of levels) {
     const pick = cand.filter(ok);
     const minGap = Math.min(...pick.slice(1).map((c, j) => (c.i - pick[j].i) * gw));
-    if (pick.length <= 1 || minGap >= 40) return pick.map(c => ({ i: c.i, label: c.m === 0 ? String(c.y) : MON_S[c.m] }));
+    if (pick.length <= 1 || minGap >= 40) return pick.map(c => ({ i: c.i, label: lbl(c) }));
   }
   return [];
 }
@@ -165,10 +169,11 @@ function plot(c, slots) {
   let out = '', sc;
   const vals = slots.map(s => s.v[c.key]).filter(v => v != null);
   if (c.from != null) {
-    // шкала от заданного начала (жир — от 25%): шаг подбирается, чтобы делений было не больше четырёх и цель попадала внутрь
-    const top = Math.max(c.goal || c.from, ...vals), step = [1, 2, 2.5, 5, 10].find(k => (top - c.from) / k <= 4) || 10;
-    const n = Math.max(1, Math.ceil((top - c.from) / step - 1e-9));
-    sc = { lo: c.from, hi: c.from + n * step, ticks: Array.from({ length: n + 1 }, (_, i) => c.from + i * step), dec: step < 1 ? 1 : 0 };
+    // шкала от заданного начала (жир — от 30%), ниже — только если замер ниже: шаг подбирается, чтобы делений было не больше четырёх и цель попадала внутрь
+    const lo = Math.min(c.from, Math.floor(Math.min(...vals)));
+    const top = Math.max(c.goal || lo, ...vals), step = [1, 2, 2.5, 5, 10].find(k => (top - lo) / k <= 4) || 10;
+    const n = Math.max(1, Math.ceil((top - lo) / step - 1e-9));
+    sc = { lo, hi: lo + n * step, ticks: Array.from({ length: n + 1 }, (_, i) => lo + i * step), dec: step < 1 ? 1 : 0 };
   } else {
     sc = vals.length ? niceScale(Math.min(...vals), Math.max(...vals), 4, c.kind === 'bars' && c.zero !== false) : { lo: 0, hi: 1, ticks: [], dec: 0 };
   }
