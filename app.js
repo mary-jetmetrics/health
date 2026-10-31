@@ -125,7 +125,7 @@ const TIP_S = 'Шаги с айфона и часов без двойного с
 const TIP_A = 'Калории кольца «Движение» — активная энергия, которую считают часы. С 20.04.2024: кольцо было и раньше, но без часов айфон считал в 7–10 раз меньше, такие цифры не сравнимы. Среднее за день по дням с данными; сегодняшний день не берётся — он неполный.';
 // sign: −1 — меньше значит лучше, +1 — больше лучше, 0 — без оценки
 const CHARTS = [
-  { id: 'w', title: 'Вес', tip: TIP_W, kind: 'bars', zero: false, key: 'w', nkey: 'w', unit: 'кг', d: 1, du: 'кг', sign: 0, h: 168, color: 'weight' },
+  { id: 'w', title: 'Вес', tip: TIP_W, kind: 'bars', zero: false, key: 'w', nkey: 'w', unit: 'кг', d: 1, du: 'кг', sign: 0, h: 168, color: 'weight', marks: true },
   // жир: линия в % со шкалой от 30% (Мария, 29.10.26; было от 25%), пунктир — цель 30%
   { id: 'f', title: 'Жир', tip: TIP_F, kind: 'line', key: 'f', nkey: 'f', unit: '%', d: 1, du: 'п.\u00a0п.', sign: -1, h: 168, scales: true, from: 30, goal: 30 },
   // активность — переключатель «шаги / ккал» (Мария, 24.10.26): поля подставляются из ACT[UI.act]
@@ -179,6 +179,10 @@ function plot(c, slots) {
   }
   const y = v => pt + ph - (v - sc.lo) / (sc.hi - sc.lo) * ph;
   GEO.y[c.id] = y;
+  // вес: столбец с минимумом на экране зелёный, с максимумом красный, подпись у них всегда (Мария, 31.10.26).
+  // Сравниваются значения как на подписях; если таких столбцов несколько — отмечены все, если все равны — никто
+  const rnd = v => +v.toFixed(c.d), shown = vals.map(rnd), hiV = Math.max(...shown), loV = Math.min(...shown);
+  const mark = v => !c.marks || hiV === loV ? '' : rnd(v) === hiV ? ' top' : rnd(v) === loV ? ' low' : '';
   // сетка и подписи значений
   sc.ticks.forEach((v, i) => {
     out += `<line class="grid" x1="${pl}" x2="${W - pr}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="yl" x="${pl - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${num(v, sc.dec)}${c.from != null ? '%' : ''}</text>`;
@@ -206,7 +210,7 @@ function plot(c, slots) {
     slots.forEach((s, i) => {
       const v = s.v[key]; if (v == null) return;
       const top = yy(v), hgt = Math.max(1, pt + ph - top);
-      out += `<rect class="${cls}" x="${(cx(i) - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" rx="${rx}"/>`;
+      out += `<rect class="${cls}${mark(v)}" x="${(cx(i) - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" rx="${rx}"/>`;
     });
   };
   if (c.kind === 'bars') bars(c.key, y, c.color ? 'bar ' + c.color : 'bar');
@@ -222,22 +226,33 @@ function plot(c, slots) {
     }
   }
   // подписи значений, светлые (Мария, 24.10.26): у каждой точки, если помещаются; тесно — через одну-две, последняя всегда.
+  // Сначала ставятся мин и макс веса, остальные расступаются вокруг них.
   // У краёв подпись прижимается внутрь, у верха графика — уходит под точку
   const idx = slots.map((s, i) => s.v[c.key] != null ? i : -1).filter(i => i >= 0);
   if (idx.length) {
     const lbl = v => num(v, c.d), wpx = Math.max(...idx.map(i => lbl(slots[i].v[c.key]).length)) * 5.8 + 6;
     const k = Math.max(1, Math.ceil(wpx / gw));
-    let prev = Infinity, prevL = Infinity;   // prevL — левый край последней поставленной подписи: прижатая к краю не наезжает на соседнюю
-    for (let q = idx.length - 1; q >= 0; q--) {
-      const i = idx[q];
-      if (prev - i < k) continue;
+    const spot = i => {
       const v = slots[i].v[c.key], x = cx(i), yy = y(v);
       const ty = c.kind === 'bars' ? Math.max(pt + 2, yy - 4) : (yy - 8 < pt + 6 ? yy + 15 : yy - 8);
       const anchor = x + wpx / 2 > W - pr + 4 ? 'end' : x - wpx / 2 < pl - 4 ? 'start' : 'middle';
-      const L = anchor === 'end' ? x - wpx : anchor === 'start' ? x : x - wpx / 2;
-      if (L + wpx > prevL) continue;
-      prev = i; prevL = L;
-      out +=`<text class="dv" x="${x.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="${anchor}">${lbl(v)}</text>`;
+      return { i, v, x, ty, anchor, L: anchor === 'end' ? x - wpx : anchor === 'start' ? x : x - wpx / 2 };
+    };
+    const placed = [];   // L — левый край: прижатая к краю подпись не наезжает на соседнюю
+    const clash = (s, level) => placed.some(p => s.L < p.L + wpx && s.L + wpx > p.L && (!level || Math.abs(s.ty - p.ty) < 12));
+    const put = (s, cls) => { placed.push(s); out += `<text class="${cls}" x="${s.x.toFixed(1)}" y="${s.ty.toFixed(1)}" text-anchor="${s.anchor}">${lbl(s.v)}</text>`; };
+    const hit = i => !!mark(slots[i].v[c.key]);
+    idx.filter(hit).reverse().map(spot).forEach(s => { if (!clash(s, true)) put(s, 'dv hit'); });
+    const tail = spot(idx[idx.length - 1]);
+    if (!hit(tail.i) && !clash(tail, true)) put(tail, 'dv');
+    let prev = tail.i;
+    for (let q = idx.length - 2; q >= 0; q--) {
+      const i = idx[q];
+      if (prev - i < k || hit(i)) continue;
+      const s = spot(i);
+      if (clash(s)) continue;
+      prev = i;
+      put(s, 'dv');
     }
   }
   // смена весов: Zepp Life → PICOOC
