@@ -34,6 +34,7 @@ const DAY = 864e5;
 const toT = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10));
 const ymd = t => { const d = new Date(t); return [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()]; };
 const ddmm = t => { const [, m, d] = ymd(t); return `${pad(d)}.${pad(m + 1)}`; };
+const isoD = t => { const [y, m, d] = ymd(t); return `${y}-${pad(m + 1)}-${pad(d)}`; };
 function pStart(g, t) {
   const d = new Date(t), y = d.getUTCFullYear(), m = d.getUTCMonth();
   if (g === 'day') return t;
@@ -78,42 +79,50 @@ function pTo(g, t, cur) {
 const GS = [['day', 'день'], ['week', 'неделю'], ['month', 'месяц'], ['quarter', 'квартал'], ['half', 'полгода'], ['year', 'год']];
 // показ: с начала недели / месяца / года, последние N дней, всё время (Мария, 29.10.26); третье — подсказка на кнопке
 const RS = [['wtd', 'WTD', 'с начала недели'], ['mtd', 'MTD', 'с начала месяца'], ['ytd', 'YTD', 'с начала года'],
-  ['30d', '30 дней', 'последние 30 дней'], ['90d', '90 дней', 'последние 90 дней'], ['180d', '180 дней', 'последние 180 дней'], ['all', 'всё время', 'с первого замера']];
+  ['30d', '30 дней', 'последние 30 дней'], ['90d', '90 дней', 'последние 90 дней'], ['180d', '180 дней', 'последние 180 дней'], ['all', 'всё время', 'с первого замера'], ['custom', 'свои даты', 'с какого дня по какой']];
 const R_DEF = { day: '90d', week: '180d', month: 'all', quarter: 'all', half: 'all', year: 'all' };   // показ при первом открытии; дальше выбор Марии, без ограничений (29.10.26)
 const saved = (() => { try { return JSON.parse(LS.get('hl-ui') || '{}'); } catch (e) { return {}; } })();
 const UI = {
   g: GS.some(x => x[0] === saved.g) ? saved.g : 'month',
   r: RS.some(x => x[0] === saved.r) ? saved.r : null,
   act: saved.act === 's' ? 's' : 'a',   // активность: a — калории кольца «Движение» (по умолчанию), s — шаги
+  from: saved.from || null, to: saved.to || null,   // свои даты, ГГГГ-ММ-ДД
   hover: null,
 };
 if (!UI.r) UI.r = R_DEF[UI.g];
-const keepUI = () => LS.set('hl-ui', JSON.stringify({ g: UI.g, r: UI.r, act: UI.act }));
+const keepUI = () => LS.set('hl-ui', JSON.stringify({ g: UI.g, r: UI.r, act: UI.act, from: UI.from, to: UI.to }));
 const COARSE = () => ['month', 'quarter', 'half', 'year'].includes(UI.g);   // цвет «лучше / хуже» — только от месяца: день к дню у весов — вода
 
 /* ---------- периоды и средние ---------- */
+// свои даты (Мария, 31.10.26): за пределами данных прижимаются к первому и последнему дню, перепутанные меняются местами
+function customRange() {
+  const clamp = s => s ? Math.min(LAST, Math.max(FIRST, toT(s))) : null;
+  const a = clamp(UI.from) ?? FIRST, b = clamp(UI.to) ?? LAST;
+  return [Math.min(a, b), Math.max(a, b)];
+}
+const rangeEnd = () => UI.r === 'custom' ? customRange()[1] : LAST;
 // начало показа — от последнего дня с данными; первый период берётся целиком, как и остальные
 function rangeStart(g, r) {
   const [y, m] = ymd(LAST);
-  const from = r === 'all' ? FIRST : r === 'wtd' ? pStart('week', LAST) : r === 'mtd' ? Date.UTC(y, m, 1)
+  const from = r === 'custom' ? customRange()[0] : r === 'all' ? FIRST : r === 'wtd' ? pStart('week', LAST) : r === 'mtd' ? Date.UTC(y, m, 1)
     : r === 'ytd' ? Date.UTC(y, 0, 1) : LAST - (parseInt(r, 10) - 1) * DAY;
   return Math.max(pStart(g, FIRST), pStart(g, from));
 }
 const avg = xs => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 // слот = период; в каждом среднее по дням, где есть значение, число таких дней и последний день
 function buildSlots() {
-  const slots = [];
+  const slots = [], end = rangeEnd();   // дни после конца показа не считаются, даже если период шире
   let k = 0;
-  for (let t = rangeStart(UI.g, UI.r); t <= LAST; t = pNext(UI.g, t)) {
+  for (let t = rangeStart(UI.g, UI.r); t <= end; t = pNext(UI.g, t)) {
     const e = pNext(UI.g, t), acc = { w: [], f: [], s: [], a: [] }, last = {};
     while (k < DAYS.length && DAYS[k].t < t) k++;
-    for (; k < DAYS.length && DAYS[k].t < e; k++) {
+    for (; k < DAYS.length && DAYS[k].t < e && DAYS[k].t <= end; k++) {
       const x = DAYS[k];
       for (const key of ['w', 'f', 's', 'a']) if (x[key] != null) { acc[key].push(x[key]); last[key] = x.t; }
     }
     const v = {};
     for (const key in acc) v[key] = avg(acc[key]);
-    slots.push({ t, e, v, n: { w: acc.w.length, f: acc.f.length, s: acc.s.length, a: acc.a.length }, last, part: e - DAY > LAST });
+    slots.push({ t, e, v, n: { w: acc.w.length, f: acc.f.length, s: acc.s.length, a: acc.a.length }, last, part: e - DAY > end });
   }
   return slots;
 }
@@ -256,7 +265,7 @@ function plot(c, slots) {
     }
   }
   // смена весов: Zepp Life → PICOOC
-  if (c.scales && PICOOC && PICOOC >= slots[0].t && PICOOC <= LAST) {
+  if (c.scales && PICOOC && PICOOC >= slots[0].t && PICOOC < slots[n - 1].e) {
     const i = slots.findIndex(s => PICOOC >= s.t && PICOOC < s.e), x = pl + gw * i;
     out += `<line class="mark" x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${pt}" y2="${pt + ph}"/>`;
     if (x - pl > 60) out += `<text class="mk" x="${(x - 5).toFixed(1)}" y="${pt + 10}" text-anchor="end">Zepp Life</text>`;
@@ -316,9 +325,17 @@ function render() {
   const ctr = `<div class="controls">
     <div class="ctl"><span class="cap">Среднее за</span><div class="filters" role="group" aria-label="Среднее за">${GS.map(([k, l]) => `<button type="button" data-g="${k}" aria-pressed="${UI.g === k}">${l}</button>`).join('')}</div></div>
     <div class="ctl"><span class="cap">Показать</span><div class="filters" role="group" aria-label="Показать">${RS.map(([k, l, tip]) => `<button type="button" data-r="${k}" title="${tip}" aria-pressed="${UI.r === k}">${l}</button>`).join('')}</div></div>
+    ${UI.r === 'custom' ? `<div class="ctl dates"><span class="cap">Даты</span><label>с <input id="d-from" type="date" value="${UI.from || ''}"></label><label>по <input id="d-to" type="date" value="${UI.to || ''}"></label></div>` : ''}
   </div>`;
-  root.innerHTML = `${head(`Apple Health по ${ddmm(toT(D.updated))}.${D.updated.slice(0, 4)} · как считается — в подсказке у названия графика`)}${ctr}${CHARTS.map(chartBlock).join('')}`;
+  root.innerHTML = `${head(`Apple Health по ${ddmm(toT(D.updated))}.${D.updated.slice(0, 4)} · как считается — в подсказке у названия графика`)}${ctr}<div class="charts" id="charts">${CHARTS.map(chartBlock).join('')}</div>`;
   UI.hover = null; lastW = root.clientWidth;
+}
+// смена дат перестраивает только графики: поле остаётся в фокусе, пока дату дописывают
+function renderCharts() {
+  SLOTS = buildSlots();
+  GEO.gw = (GEO.W - GEO.pl - GEO.pr) / Math.max(1, SLOTS.length);
+  document.getElementById('charts').innerHTML = CHARTS.map(chartBlock).join('');
+  UI.hover = null;
 }
 
 /* ---------- наведение: одна вертикаль через все графики, цифры над графиками — за выбранный период ---------- */
@@ -350,8 +367,16 @@ root.addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b || b.disabled) return;
   if (b.dataset.g) { UI.g = b.dataset.g; keepUI(); render(); }
-  else if (b.dataset.r) { UI.r = b.dataset.r; keepUI(); render(); }
+  else if (b.dataset.r) {
+    if (b.dataset.r === 'custom' && !UI.from) { UI.from = isoD(SLOTS[0].t); UI.to = isoD(rangeEnd()); }   // в первый раз — то, что сейчас на экране
+    UI.r = b.dataset.r; keepUI(); render();
+  }
   else if (b.dataset.act) { UI.act = b.dataset.act; setAct(); keepUI(); render(); }
+});
+root.addEventListener('change', e => {
+  const k = { 'd-from': 'from', 'd-to': 'to' }[e.target.id];
+  if (!k || !e.target.value) return;
+  UI[k] = e.target.value; keepUI(); renderCharts();
 });
 root.addEventListener('submit', e => {
   if (e.target.id !== 'login') return;
